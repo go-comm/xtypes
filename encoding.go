@@ -2,9 +2,28 @@ package xtypes
 
 import "encoding/json"
 
-func Marshal(data []byte, v interface{}) ([]byte, error) {
+type MarshalerWithBuffer interface {
+	MarshalWithBuffer([]byte) ([]byte, error)
+}
+
+type Marshaler interface {
+	Marshal() ([]byte, error)
+}
+
+type Unmarshaler interface {
+	Unmarshal([]byte) error
+}
+
+func Marshal(v interface{}) ([]byte, error) {
 	if m, ok := v.(Marshaler); ok {
-		return m.Marshal(data)
+		return m.Marshal()
+	}
+	return json.Marshal(v)
+}
+
+func MarshalWithBuffer(data []byte, v interface{}) ([]byte, error) {
+	if m, ok := v.(MarshalerWithBuffer); ok {
+		return m.MarshalWithBuffer(data)
 	}
 	return json.Marshal(v)
 }

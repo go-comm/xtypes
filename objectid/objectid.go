@@ -3,37 +3,65 @@ package objectid
 import (
 	"bytes"
 	"database/sql/driver"
+	"encoding/base32"
 	"fmt"
 	"unsafe"
+)
 
-	"github.com/go-comm/xtypes"
-	"github.com/go-comm/xtypes/internal/codec"
+const (
+	// Size length of id
+	Size = 12
+)
+
+var (
+	nilID ID
+
+	encoding = base32.HexEncoding.WithPadding(base32.NoPadding)
 )
 
 type ID [Size]byte
 
-func (id *ID) Compare(o xtypes.Object) int {
-	if v, ok := o.(*ID); ok {
-		return bytes.Compare((*id)[:], (*v)[:])
-	}
-	return -1
+func (id ID) Compare(o ID) int {
+	return bytes.Compare(id[:], o[:])
+}
+
+func (id ID) IsNil() bool {
+	return id == nilID
+}
+
+func NilID() ID {
+	return nilID
 }
 
 func (id *ID) Unmarshal(b []byte) error {
-	if len(b) < 2*Size {
-		return fmt.Errorf("objectid: expected len %d, not but %d", 2*Size, len(b))
+	encLen := encoding.EncodedLen(Size)
+	if encLen != len(b) {
+		return fmt.Errorf("objectid: expected len %d, not but %d", encLen, len(b))
 	}
-	_, err := codec.DecodeFromHex((*id)[:], b)
+	_, err := encoding.Decode((*id)[:], b)
 	return err
 }
 
-func (id *ID) Marshal(b []byte) ([]byte, error) {
-	return codec.EncodeToHex(b, (*id)[:]), nil
+func (id ID) MarshalWithBuffer(b []byte) ([]byte, error) {
+	encLen := encoding.EncodedLen(Size)
+	if len(b) != encLen {
+		b = make([]byte, encLen)
+	}
+	encoding.Encode(b, id[:])
+	return b[:encLen], nil
+}
+
+func (id ID) Marshal() ([]byte, error) {
+	encLen := encoding.EncodedLen(Size)
+	b := make([]byte, encLen)
+	encoding.Encode(b, id[:])
+	return b[:encLen], nil
 }
 
 func (id *ID) UnmarshalJSON(b []byte) error {
-	if len(b) < 2*Size+2 {
-		return fmt.Errorf("objectid: expected len >= %d, not but %d", 2*Size+2, len(b))
+	encLen := encoding.EncodedLen(Size) + 2
+	if encLen != len(b) {
+		return fmt.Errorf("objectid: expected len %d, not but %d", encLen, len(b))
 	}
 	if b[0] != '"' || b[len(b)-1] != '"' {
 		return fmt.Errorf("objectid: []byte invalid")
@@ -41,28 +69,37 @@ func (id *ID) UnmarshalJSON(b []byte) error {
 	return id.Unmarshal(b[1 : len(b)-1])
 }
 
-func (id *ID) MarshalJSON() ([]byte, error) {
-	dst := make([]byte, 2*Size+2)
+func (id ID) MarshalJSON() ([]byte, error) {
+	dst := make([]byte, encoding.EncodedLen(Size)+2)
 	dst[0] = '"'
 	dst[len(dst)-1] = '"'
-	id.Marshal(dst[1:])
+	id.MarshalWithBuffer(dst[1 : len(dst)-1])
 	return dst, nil
 }
 
 func (id ID) String() string {
-	b, _ := id.Marshal(nil)
+	b, _ := id.Marshal()
 	return *(*string)(unsafe.Pointer(&b))
 }
 
-func (id *ID) Value() (driver.Value, error) {
-	b, _ := id.Marshal(nil)
-	return *(*string)(unsafe.Pointer(&b)), nil
+func (id ID) Value() (driver.Value, error) {
+	if id.IsNil() {
+		return nil, nil
+	}
+	b, err := id.Marshal()
+	return *(*string)(unsafe.Pointer(&b)), err
 }
 
 func (id *ID) Scan(v interface{}) error {
-	d, ok := v.([]byte)
-	if !ok {
-		return fmt.Errorf("objectid: scan %+v", v)
+	switch b := v.(type) {
+	case []byte:
+		return id.Unmarshal(b)
+	case string:
+		return id.Unmarshal([]byte(b))
+	case nil:
+		*id = nilID
+		return nil
+	default:
+		return fmt.Errorf("objectid: scanning unsupported type: %T", b)
 	}
-	return id.Unmarshal(d)
 }
