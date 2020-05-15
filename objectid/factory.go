@@ -51,7 +51,7 @@ func (f *factory) Update(id *ID) {
 	ts := uint32(time.Now().Unix() - f.startEpoch.Unix())
 	binary.BigEndian.PutUint32((*id)[:], ts)
 
-	machineID := machine.HardwareAddr()
+	machineID := machine.Hostname()
 	(*id)[4] = machineID[0]
 	(*id)[5] = machineID[1]
 	(*id)[6] = machineID[2]
