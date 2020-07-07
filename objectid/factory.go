@@ -5,7 +5,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-comm/xtypes/internal/couter"
 	"github.com/go-comm/xtypes/internal/machine"
 )
 
@@ -15,6 +14,20 @@ var (
 
 	defaultFactory = NewFactory()
 )
+
+type Option func(s *factory)
+
+func WithStartEpoch(startEpoch time.Time) Option {
+	return func(s *factory) {
+		s.startEpoch = startEpoch
+	}
+}
+
+func WithMachineID(machineID uint) Option {
+	return func(s *factory) {
+		s.machineID = machineID
+	}
+}
 
 type Factory interface {
 	New() (id ID)
@@ -29,17 +42,19 @@ func Update(id *ID) {
 	defaultFactory.Update(id)
 }
 
-func NewFactory() *factory {
-	return NewFactoryWithStartEpoch(defaultStartEpoch)
-}
-
-func NewFactoryWithStartEpoch(startEpoch time.Time) *factory {
-	return &factory{startEpoch: startEpoch, idCounter: couter.Couter()}
+func NewFactory(options ...Option) *factory {
+	fac := &factory{}
+	fac.startEpoch = defaultStartEpoch
+	for _, opt := range options {
+		opt(fac)
+	}
+	return fac
 }
 
 type factory struct {
 	startEpoch time.Time
 	idCounter  uint32
+	machineID  uint
 }
 
 func (f *factory) New() (id ID) {
@@ -51,10 +66,10 @@ func (f *factory) Update(id *ID) {
 	ts := uint32(time.Now().Unix() - f.startEpoch.Unix())
 	binary.BigEndian.PutUint32((*id)[:], ts)
 
-	machineID := machine.Hostname()
-	(*id)[4] = machineID[0]
-	(*id)[5] = machineID[1]
-	(*id)[6] = machineID[2]
+	machineID := f.machineID
+	(*id)[4] = byte(machineID & 0xFF)
+	(*id)[5] = byte((machineID >> 8) & 0xFF)
+	(*id)[6] = byte((machineID >> 16) & 0xFF)
 
 	pid := machine.PID()
 	(*id)[7] = byte(pid >> 8)
