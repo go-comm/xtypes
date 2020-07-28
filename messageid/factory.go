@@ -1,26 +1,26 @@
-package objectid
+package messageid
 
 import (
-	"encoding/binary"
 	"errors"
 	"sync"
 	"time"
-
-	"github.com/go-comm/xtypes/internal/machine"
-)
-
-const (
-	sequenceMask = 0x00FFFFFF
 )
 
 var (
+	nodeIDBits     = uint64(10)
+	sequenceBits   = uint64(12)
+	nodeIDShift    = sequenceBits
+	timestampShift = sequenceBits + nodeIDBits
+	sequenceMask   = int64(-1) ^ (int64(-1) << sequenceBits)
+
 	// Starting from January 1, 2020
 	defaultStartEpoch = time.Unix(1577808000, 0).UnixNano()
-	defaultFactory    = NewFactory()
+
+	defaultFactory = NewFactory()
 )
 
 var (
-	ErrTimeBackwards = errors.New("objectid: time has gone backwards")
+	ErrTimeBackwards = errors.New("messageid: time has gone backwards")
 )
 
 type Option func(s *factory)
@@ -31,7 +31,7 @@ func WithStartEpoch(startEpoch int64) Option {
 	}
 }
 
-func WithNodeID(nodeID uint) Option {
+func WithNodeID(nodeID int64) Option {
 	return func(s *factory) {
 		s.nodeID = nodeID
 	}
@@ -45,6 +45,16 @@ type Factory interface {
 	New() (ID, error)
 }
 
+type factory struct {
+	mutex sync.Mutex
+
+	startEpoch    int64
+	lastTimestamp int64
+	sequence      int64
+	nodeID        int64
+	lastID        ID
+}
+
 func NewFactory(options ...Option) Factory {
 	fac := &factory{}
 	fac.startEpoch = defaultStartEpoch
@@ -54,33 +64,16 @@ func NewFactory(options ...Option) Factory {
 	return fac
 }
 
-type factory struct {
-	mutex         sync.Mutex
-	startEpoch    int64
-	lastTimestamp int64
-	sequence      uint32
-	nodeID        uint
-}
-
-func (f *factory) New() (id ID, err error) {
-	nodeID := f.nodeID
-	id[4] = byte(nodeID >> 16)
-	id[5] = byte((nodeID >> 8))
-	id[6] = byte((nodeID))
-
-	pid := machine.PID()
-	id[7] = byte(pid >> 8)
-	id[8] = byte(pid)
-
-	var seq uint32
+func (f *factory) New() (ID, error) {
+	var seq int64
 LOOP:
 	// divide by 1048576, giving pseudo-milliseconds
-	ts := (time.Now().UnixNano() - f.startEpoch) >> 20
+	ts := time.Now().UnixNano() >> 20
 
 	f.mutex.Lock()
 	if ts < f.lastTimestamp {
 		f.mutex.Unlock()
-		return nilID, ErrTimeBackwards
+		return 0, ErrTimeBackwards
 	}
 
 	if f.lastTimestamp == ts {
@@ -96,9 +89,9 @@ LOOP:
 	f.lastTimestamp = ts
 	f.mutex.Unlock()
 
-	binary.BigEndian.PutUint32(id[:], uint32(ts))
-	id[9] = byte(seq >> 16)
-	id[10] = byte(seq >> 8)
-	id[11] = byte(seq)
-	return
+	id := ID(((ts - f.startEpoch) << timestampShift) |
+		(f.nodeID << nodeIDShift) |
+		seq)
+
+	return id, nil
 }
