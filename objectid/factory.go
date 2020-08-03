@@ -1,12 +1,9 @@
 package objectid
 
 import (
-	"encoding/binary"
 	"errors"
 	"sync"
 	"time"
-
-	"github.com/go-comm/xtypes/internal/machine"
 )
 
 const (
@@ -64,13 +61,9 @@ type factory struct {
 
 func (f *factory) New() (id ID, err error) {
 	nodeID := f.nodeID
-	id[4] = byte(nodeID >> 16)
-	id[5] = byte((nodeID >> 8))
-	id[6] = byte((nodeID))
-
-	pid := machine.PID()
-	id[7] = byte(pid >> 8)
-	id[8] = byte(pid)
+	id[6] = byte(nodeID >> 16)
+	id[7] = byte((nodeID >> 8))
+	id[8] = byte((nodeID))
 
 	var seq uint32
 LOOP:
@@ -96,7 +89,13 @@ LOOP:
 	f.lastTimestamp = ts
 	f.mutex.Unlock()
 
-	binary.BigEndian.PutUint32(id[:], uint32(ts))
+	id[0] = byte(ts >> 40)
+	id[1] = byte(ts >> 32)
+	id[2] = byte(ts >> 24)
+	id[3] = byte(ts >> 16)
+	id[4] = byte(ts >> 8)
+	id[5] = byte(ts)
+
 	id[9] = byte(seq >> 16)
 	id[10] = byte(seq >> 8)
 	id[11] = byte(seq)

@@ -68,7 +68,7 @@ func (f *factory) New() (ID, error) {
 	var seq int64
 LOOP:
 	// divide by 1048576, giving pseudo-milliseconds
-	ts := time.Now().UnixNano() >> 20
+	ts := (time.Now().UnixNano() - f.startEpoch) >> 20
 
 	f.mutex.Lock()
 	if ts < f.lastTimestamp {
@@ -88,8 +88,7 @@ LOOP:
 	}
 	f.lastTimestamp = ts
 	f.mutex.Unlock()
-
-	id := ID(((ts - f.startEpoch) << timestampShift) |
+	id := ID((ts << timestampShift) |
 		(f.nodeID << nodeIDShift) |
 		seq)
 
