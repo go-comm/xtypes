@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/go-comm/xtypes/internal/machine"
 )
 
 const (
@@ -12,8 +14,9 @@ const (
 
 var (
 	// Starting from January 1, 2020
-	defaultStartEpoch = time.Unix(1577808000, 0).UnixNano()
-	defaultFactory    = NewFactory()
+	defaultStartEpoch       = time.Unix(1577808000, 0).UnixNano()
+	defaultFactory          = NewFactory()
+	hashIncrement     int32 = 0x61c88647
 )
 
 var (
@@ -55,17 +58,18 @@ type factory struct {
 	mutex         sync.Mutex
 	startEpoch    int64
 	lastTimestamp int64
-	sequence      uint32
+	sequence      int32
+	lastSequence  int32
 	nodeID        uint
 }
 
 func (f *factory) New() (id ID, err error) {
-	nodeID := f.nodeID
-	id[6] = byte(nodeID >> 16)
-	id[7] = byte((nodeID >> 8))
-	id[8] = byte((nodeID))
+	v := ((f.nodeID & 0x0FFF) << 12) | uint(machine.PID()&0x0FFF)
+	id[6] = byte(v >> 16)
+	id[7] = byte(v >> 8)
+	id[8] = byte(v)
 
-	var seq uint32
+	var seq int32
 LOOP:
 	// divide by 1048576, giving pseudo-milliseconds
 	ts := (time.Now().UnixNano() - f.startEpoch) >> 20
@@ -76,15 +80,16 @@ LOOP:
 		return nilID, ErrTimeBackwards
 	}
 
+	seq = (f.sequence + hashIncrement) & sequenceMask
 	if f.lastTimestamp == ts {
-		seq = (f.sequence + 1) & sequenceMask
-		if seq == 0 {
+		if seq == f.lastSequence {
 			f.mutex.Unlock()
 			goto LOOP
 		}
 		f.sequence = seq
 	} else {
-		f.sequence = 0
+		f.sequence = seq
+		f.lastSequence = seq
 	}
 	f.lastTimestamp = ts
 	f.mutex.Unlock()
