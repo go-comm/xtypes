@@ -2,6 +2,7 @@ package objectid
 
 import (
 	"errors"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -51,6 +52,9 @@ func NewFactory(options ...Option) Factory {
 	for _, opt := range options {
 		opt(fac)
 	}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	fac.sequence = r.Int31() & sequenceMask
+	fac.initSeq = fac.sequence
 	return fac
 }
 
@@ -58,8 +62,8 @@ type factory struct {
 	mutex         sync.Mutex
 	startEpoch    int64
 	lastTimestamp int64
+	initSeq       int32
 	sequence      int32
-	lastSequence  int32
 	nodeID        uint
 }
 
@@ -82,14 +86,13 @@ LOOP:
 
 	seq = (f.sequence + hashIncrement) & sequenceMask
 	if f.lastTimestamp == ts {
-		if seq == f.lastSequence {
+		if seq == f.initSeq {
 			f.mutex.Unlock()
 			goto LOOP
 		}
 		f.sequence = seq
 	} else {
 		f.sequence = seq
-		f.lastSequence = seq
 	}
 	f.lastTimestamp = ts
 	f.mutex.Unlock()
