@@ -95,6 +95,10 @@ func (id ID) Marshal() ([]byte, error) {
 }
 
 func (id *ID) UnmarshalJSON(b []byte) error {
+	if len(b) == 4 && b[0] == 'n' && b[1] == 'u' && b[2] == 'l' && b[3] == 'l' {
+		*id = ID{}
+		return nil
+	}
 	if b[0] != '"' || b[len(b)-1] != '"' {
 		return fmt.Errorf("objectid: []byte invalid")
 	}
@@ -129,7 +133,7 @@ func (id *ID) Scan(v interface{}) error {
 	case string:
 		return id.Unmarshal([]byte(b))
 	case nil:
-		*id = nilID
+		*id = ID{}
 		return nil
 	default:
 		return fmt.Errorf("objectid: scanning unsupported type: %T", b)

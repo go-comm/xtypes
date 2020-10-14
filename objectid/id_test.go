@@ -29,6 +29,18 @@ func Test_Generator(t *testing.T) {
 	}
 }
 
+func Test_Nil(t *testing.T) {
+	var data struct {
+		ID ID `json:"id"`
+	}
+	data.ID, _ = New()
+	err := xtypes.Unmarshal([]byte(`{"id":null}`), &data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(data, data.ID.IsNil())
+}
+
 func Benchmark_Generator(b *testing.B) {
 	var data = make([]byte, Size*2)
 	b.StartTimer()
